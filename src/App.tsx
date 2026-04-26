@@ -5,7 +5,7 @@ import LoginPage from './components/LoginPage';
 
 const DEFAULT_OWNER: User = {
   id: 'owner-1',
-  name: 'ADMIN',
+  name: 'ADMIN OWNER',
   role: 'OWNER',
   phone: '0000000000'
 };
@@ -65,6 +65,7 @@ export default function App() {
         setCustomerRates(data.customerRates);
         setKhataClients(data.khataClients);
         setOwnerProfile(data.ownerProfile);
+        setIsDayStarted(data.isDayStarted || false);
         
         // If we are logged in as owner, update currently saved info with latest from DB
         const saved = localStorage.getItem('currentUser');
@@ -83,16 +84,36 @@ export default function App() {
       });
   }, []);
 
+  const syncDayStatus = async (status: boolean) => {
+    try {
+      const res = await fetch('/api/system-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'isDayStarted', value: status })
+      });
+      if (res.ok) {
+        setIsDayStarted(status);
+      }
+    } catch (e) {
+      console.error('Failed to sync day status', e);
+    }
+  };
+
   const deleteRecord = async (collection: string, id: string) => {
+    console.log('Deleting:', collection, id);
     try {
       const res = await fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
+      console.log('Delete response:', res.status);
       if (res.ok) {
+        console.log('Updating state for:', collection);
         if (collection === 'customers') setCustomers(prev => prev.filter(c => c.id !== id));
         if (collection === 'maintenance') setMaintenance(prev => prev.filter(m => m.id !== id));
         if (collection === 'salaries') setSalaries(prev => prev.filter(s => s.id !== id));
         if (collection === 'khata-payments') setKhataPayments(prev => prev.filter(p => p.id !== id));
+        if (collection === 'khataPayments') setKhataPayments(prev => prev.filter(p => p.id !== id));
         if (collection === 'assistants') setAssistants(prev => prev.filter(a => a.id !== id));
         if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
+        if (collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c !== id));
       }
     } catch (e) {
@@ -102,7 +123,7 @@ export default function App() {
 
   const syncProfile = async (userData: { id: string, name: string, phone: string, role: string }) => {
     try {
-      const res = await fetch('/api/profile/update', {
+      const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userData)
@@ -116,20 +137,50 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error('Failed to update profile', e);
+      console.error('Failed to sync profile', e);
     }
   };
 
-  const syncCustomer = async (data: any) => {
-    const newCustomer = typeof data === 'function' ? data([])[0] : data;
+  const syncNotificationSettings = async (settings: any) => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: currentUser?.id, ...settings })
+      });
+      if (!res.ok) return;
+      setNotificationSettings(settings);
+    } catch (e) {
+      console.error('Failed to sync settings', e);
+    }
+  };
+
+const syncCustomer = async (data: any) => {
+    const customer = typeof data === 'function' ? data([])[0] : data;
+    if (!customer || !customer.id) {
+      return;
+    }
     try {
       const res = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCustomer)
+        body: JSON.stringify(customer)
       });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Sync error:', err.error);
+        return;
+      }
       const stored = await res.json();
-      setCustomers(prev => [stored, ...prev]);
+      // If updateFlag was true, replace existing; otherwise add new
+      if (customer.updateFlag) {
+        setCustomers((prev: any) => prev.map((c: any) => c.id === stored.id ? stored : c));
+      } else {
+        setCustomers((prev: any) => {
+          if (prev.some((c: any) => c.id === stored.id)) return prev;
+          return [stored, ...prev];
+        });
+      }
     } catch (e) {
       console.error('Failed to sync customer', e);
     }
@@ -143,8 +194,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMaint)
       });
+      if (!res.ok) return;
       const stored = await res.json();
-      setMaintenance(prev => [stored, ...prev]);
+      setMaintenance(prev => {
+        if (prev.some(m => m.id === stored.id)) return prev;
+        return [stored, ...prev];
+      });
     } catch (e) {
       console.error('Failed to sync maintenance', e);
     }
@@ -158,25 +213,66 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSalary)
       });
+      if (!res.ok) return;
       const stored = await res.json();
-      setSalaries(prev => [stored, ...prev]);
+      setSalaries(prev => {
+        if (prev.some(s => s.id === stored.id)) return prev;
+        return [stored, ...prev];
+      });
     } catch (e) {
       console.error('Failed to sync salary', e);
     }
   };
 
-  const syncKhataPayment = async (data: any) => {
+const syncKhataPayment = async (data: any) => {
     const newPayment = typeof data === 'function' ? data([])[0] : data;
+    // Skip if already in local state
+    if (newPayment.id && khataPayments.some((p: any) => p.id === newPayment.id)) {
+      return;
+    }
     try {
       const res = await fetch('/api/khata-payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPayment)
       });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Sync error:', err.error);
+        return;
+      }
       const stored = await res.json();
-      setKhataPayments(prev => [stored, ...prev]);
+      // Add to local state only if not already there
+      setKhataPayments((prev: any) => {
+        if (prev.some((p: any) => p.id === stored.id)) return prev;
+        return [stored, ...prev];
+      });
     } catch (e) {
       console.error('Failed to sync khata payment', e);
+    }
+  };
+
+  const syncCustomerRate = async (data: any) => {
+    const newRate = typeof data === 'function' ? data([])[0] : data;
+    if (!newRate || !newRate.customerName || !newRate.material) return;
+    try {
+      const res = await fetch('/api/customer-rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRate)
+      });
+      if (!res.ok) return;
+      const stored = await res.json();
+      // Update or add in local state
+      setCustomerRates((prev: any) => {
+        const idx = prev.findIndex((r: any) => r.id === stored.id);
+        if (idx >= 0) {
+          return prev.map((r: any) => r.id === stored.id ? stored : r);
+        }
+        return [stored, ...prev];
+      });
+    } catch (e) {
+      console.error('Failed to sync customer rate', e);
     }
   };
 
@@ -188,37 +284,32 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newAssistant)
       });
+      if (!res.ok) return;
       const stored = await res.json();
-      setAssistants(prev => [...prev, stored]);
+      setAssistants(prev => {
+        if (prev.some(a => a.id === stored.id)) return prev;
+        return [...prev, stored];
+      });
     } catch (e) {
       console.error('Failed to sync assistant', e);
     }
   };
 
-  const syncCustomerRate = async (data: any) => {
-    const newRate = typeof data === 'function' ? data([])[0] : data;
-    try {
-      const res = await fetch('/api/customer-rates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRate)
-      });
-      const stored = await res.json();
-      setCustomerRates(prev => [stored, ...prev]);
-    } catch (e) {
-      console.error('Failed to sync customer rate', e);
-    }
-  };
-
   const syncKhataClient = async (clientName: string) => {
+    if (!clientName) return;
     try {
       const res = await fetch('/api/khata-clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: clientName })
       });
+      if (!res.ok) return;
       const stored = await res.json();
-      setKhataClients(prev => [...prev, stored.name]);
+      // Add only if not exists
+      setKhataClients(prev => {
+        if (prev.includes(stored.name)) return prev;
+        return [...prev, stored.name];
+      });
     } catch (e) {
       console.error('Failed to sync khata client', e);
     }
@@ -399,7 +490,7 @@ export default function App() {
       {currentUser.role === 'OWNER' ? (
         <OwnerDashboard 
           state={appState} 
-          setIsDayStarted={setIsDayStarted}
+          setIsDayStarted={syncDayStatus}
           activeTab={activeTab}
           setCustomers={syncCustomer as any}
           setMaintenance={syncMaintenance as any}

@@ -20,7 +20,7 @@ import { Save } from 'lucide-react';
 interface OwnerDashboardProps {
   state: AppState;
   activeTab: string;
-  setIsDayStarted: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsDayStarted: (status: boolean) => Promise<void>;
   setCustomers: React.Dispatch<React.SetStateAction<CustomerEntry[]>>;
   setMaintenance: React.Dispatch<React.SetStateAction<MaintenanceEntry[]>>;
   setSalaries: React.Dispatch<React.SetStateAction<SalaryEntry[]>>;
@@ -98,14 +98,15 @@ export default function OwnerDashboard({
 
   const handleAddAssistant = (e: React.FormEvent) => {
     e.preventDefault();
-    const newAssistant: User = {
-      id: Math.random().toString(36).substr(2, 9),
+    const newAssistant = {
+      id: `asst-${Date.now()}`,
       name: assistantName,
       phone: assistantPhone,
       role: 'ASSISTANT',
-      password: assistantPassword,
+      password: assistantPassword || '123456',
     };
-    setAssistants(prev => [...prev, newAssistant]);
+    // Sync to backend
+    (setAssistants as any)(newAssistant);
     setIsAssistantModalOpen(false);
     setAssistantName('');
     setAssistantPhone('');
@@ -115,20 +116,21 @@ export default function OwnerDashboard({
   const handleAddKhata = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingKhataId) {
-      setCustomerRates(prev => prev.map(r => r.id === editingKhataId ? {
-        ...r,
+      const updated = {
+        id: editingKhataId,
         customerName: khataCustName,
         material: khataMaterial,
-        rate: parseFloat(khataRate),
-      } : r));
+        rate: parseFloat(khataRate) || 0,
+      };
+      (setCustomerRates as any)(updated);
     } else {
-      const newRate: CustomerRate = {
+      const newRate = {
         id: Math.random().toString(36).substr(2, 9),
         customerName: khataCustName,
         material: khataMaterial,
-        rate: parseFloat(khataRate),
+        rate: parseFloat(khataRate) || 0,
       };
-      setCustomerRates(prev => [newRate, ...prev]);
+      (setCustomerRates as any)(newRate);
     }
     setIsKhataModalOpen(false);
     setEditingKhataId(null);
@@ -145,20 +147,21 @@ export default function OwnerDashboard({
     setIsKhataModalOpen(true);
   };
 
-  const handleAddKhataClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newKhataClientName.trim() && !state.khataClients.includes(newKhataClientName.trim())) {
-      setKhataClients(prev => [...prev, newKhataClientName.trim()]);
-      setNewKhataClientName('');
-      setIsKhataClientModalOpen(false);
-    }
-  };
+   const handleAddKhataClient = async (e: React.FormEvent) => {
+     e.preventDefault();
+     const trimmed = newKhataClientName.trim();
+     if (trimmed && !(state.khataClients || []).includes(trimmed)) {
+       await (setKhataClients as any)(trimmed);
+       setNewKhataClientName('');
+       setIsKhataClientModalOpen(false);
+     }
+   };
 
   const handleAddKhataPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKhataClient) return;
     
-    const newPayment: KhataPayment = {
+    const newPayment = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       customerName: selectedKhataClient,
@@ -167,7 +170,8 @@ export default function OwnerDashboard({
       description: kpDescription,
     };
     
-    setKhataPayments(prev => [newPayment, ...prev]);
+    // Sync to backend only - App.tsx will add to state after DB save
+    (setKhataPayments as any)(newPayment);
     setIsKhataPaymentModalOpen(false);
     setKpAmount('');
     setKpMethod('');
@@ -195,15 +199,18 @@ export default function OwnerDashboard({
 
   const handleAddSalary = (e: React.FormEvent) => {
     e.preventDefault();
-    const newEntry: SalaryEntry = {
+    const newEntry = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       workerName,
       role: workerRole,
       amount: parseFloat(salaryAmount),
       month: salaryMonth,
+      addedBy: state.currentUser?.name || 'Unknown',
+      addedById: state.currentUser?.id || '',
     };
-    setSalaries(prev => [newEntry, ...prev]);
+    // Sync to backend
+    (setSalaries as any)(newEntry);
     setIsSalaryModalOpen(false);
     setWorkerName('');
     setWorkerRole('');
@@ -212,61 +219,54 @@ export default function OwnerDashboard({
   };
 
   const uniqueKhataCustomers = useMemo(() => 
-    Array.from(new Set(state.customerRates.map(r => r.customerName))),
-    [state.customerRates]
+    Array.from(new Set([...state.khataClients, ...state.customerRates.map(r => r.customerName)])),
+    [state.khataClients, state.customerRates]
   );
 
   const availableKhataMaterials = useMemo(() => 
     state.customerRates
-      .filter(r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase())
+      .filter(r => (r.customerName || '').trim().toUpperCase() === (custName || '').trim().toUpperCase())
       .map(r => r.material),
     [custName, state.customerRates]
   );
 
-  // Auto-detect Regular Customer & Rate from Khata
-  useEffect(() => {
-    const isRegular = state.customerRates.some(
-      r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase()
-    );
+  // Auto-detect when customer name changes
+  const detectKhataClient = () => {
+    const name = (custName || '').trim().toUpperCase();
+    if (!name) return;
     
-    if (isRegular) {
-      setCustType('REGULAR');
-    } else if (custName.trim().length > 0) {
-      setCustType('OTHER');
-    }
+    // Check if in khata clients
+    const isKhata = state.khataClients.some(k => (k || '').trim().toUpperCase() === name);
+    setCustType(isKhata ? 'REGULAR' : 'OTHER');
+  };
 
-    // Auto-fill Rate from Khata
-    if (custName.trim() && material.trim()) {
-      const match = state.customerRates.find(
-        r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase() &&
-             r.material.trim().toUpperCase() === material.trim().toUpperCase()
-      );
-      if (match) {
-        setRate(match.rate.toString());
-      }
+  // Auto-fill rate when material changes
+  const detectRate = () => {
+    const name = (custName || '').trim().toUpperCase();
+    const mat = (material || '').trim().toUpperCase();
+    if (!name || !mat) return;
+    
+    const match = state.customerRates.find(
+      r => (r.customerName || '').trim().toUpperCase() === name && 
+           (r.material || '').trim().toUpperCase() === mat
+    );
+    if (match && match.rate > 0) {
+      setRate(match.rate.toString());
     }
-  }, [custName, material, state.customerRates]);
+  };
 
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    const totalAmount = parseFloat(brass) * parseFloat(rate);
+    const rateNum = custType === 'REGULAR' ? 0 : (isNaN(parseFloat(rate)) ? 0 : parseFloat(rate));
+    const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
+    const totalAmount = brassNum * rateNum;
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
-      setCustomers(prev => prev.map(c => c.id === editingId ? {
-        ...c,
-        vehicleNumber: vehicle,
-        customerName: custName,
-        customerType: custType,
-        material: material,
-        brass: parseFloat(brass),
-        rate: parseFloat(rate),
-        amount: totalAmount,
-        paidAmount: paid,
-        status: paid >= totalAmount ? 'PAID' : 'PENDING',
-      } : c));
+      // For edit - sync to backend with updateFlag
+      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: custName, customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
-      const newEntry: CustomerEntry = {
+      const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
         date: new Date().toISOString().split('T')[0],
         vehicleNumber: vehicle,
@@ -274,13 +274,25 @@ export default function OwnerDashboard({
         customerType: custType,
         material: material,
         brass: parseFloat(brass),
-        rate: parseFloat(rate),
+        rate: custType === 'REGULAR' ? 0 : parseFloat(rate),
         amount: totalAmount,
         paidAmount: paid,
         status: paid >= totalAmount ? 'PAID' : 'PENDING',
         addedBy: state.currentUser?.name || 'Unknown',
+        addedById: state.currentUser?.id || '',
       };
-      setCustomers(prev => [newEntry, ...prev]);
+      // Sync to backend only - App.tsx will add to state after DB save
+      (setCustomers as any)(newEntry);
+      
+      // If Khata Client (REGULAR), also save to DB
+      if (custType === 'REGULAR' && (custName || '').trim()) {
+        // Add to Khata clients
+        (setKhataClients as any)((custName || '').trim());
+        // Always create rate entry for the material (rate can be 0)
+        if ((material || '').trim()) {
+          (setCustomerRates as any)({ customerName: custName, material: material, rate: parseFloat(rate) || 0 });
+        }
+      }
     }
 
     setIsCustomerModalOpen(false);
@@ -307,15 +319,17 @@ export default function OwnerDashboard({
 
   const handleAddMaintenance = (e: React.FormEvent) => {
     e.preventDefault();
-    const newEntry: MaintenanceEntry = {
+    const newEntry = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       type: mType,
       amount: parseFloat(mAmount),
       description: mDesc,
-      addedById: state.currentUser?.id || 'Unknown',
+      addedBy: state.currentUser?.name || 'Unknown',
+      addedById: state.currentUser?.id || '',
     };
-    setMaintenance(prev => [newEntry, ...prev]);
+    // Sync to backend
+    (setMaintenance as any)(newEntry);
     setIsMaintenanceModalOpen(false);
     setMType('');
     setMAmount('');
@@ -390,15 +404,30 @@ export default function OwnerDashboard({
   }, [state.customerRates, searchTerm]);
 
   const stats = useMemo(() => {
-    const totalIncome = state.customers.reduce((acc, curr) => acc + curr.amount, 0);
+    const getAmount = (c: any) => {
+      if (c.customerType === 'REGULAR') {
+        // Get rate from customerRates
+        const rateRec = state.customerRates.find(r => 
+          r.customerName === c.customerName && r.material === c.material
+        );
+        if (rateRec && rateRec.rate) {
+          return c.brass * rateRec.rate;
+        }
+        return 0;
+      }
+      return c.amount;
+    };
+    
+    const totalIncome = state.customers.reduce((acc, curr) => acc + getAmount(curr), 0);
     const totalExpenses = state.maintenance.reduce((acc, curr) => acc + curr.amount, 0) + 
                           state.salaries.reduce((acc, curr) => acc + curr.amount, 0);
     const profit = totalIncome - totalExpenses;
-    const pending = state.customers.filter(c => c.status === 'PENDING').reduce((acc, curr) => acc + curr.amount, 0);
-    const paid = state.customers.filter(c => c.status === 'PAID').reduce((acc, curr) => acc + curr.amount, 0);
+    const paid = state.khataPayments.reduce((acc, p) => acc + p.amount, 0) + 
+                 state.customers.filter(c => c.customerType === 'OTHER').reduce((acc, c) => acc + c.paidAmount, 0);
+    const pending = totalIncome - paid;
 
     return { totalIncome, totalExpenses, profit, pending, paid };
-  }, [state]);
+  }, [state, state.customerRates]);
 
   const chartData = useMemo(() => {
     // Aggregate data by date for the last 7 days
@@ -415,21 +444,30 @@ export default function OwnerDashboard({
     }
 
     state.customers.forEach(c => {
-      const date = c.date.split('T')[0];
+      const date = (c.date || '').split('T')[0];
       if (dailyMap[date]) {
-        dailyMap[date].income += c.amount;
+        let amt = c.amount;
+        if (c.customerType === 'REGULAR') {
+          const rateRec = state.customerRates.find(r => 
+            r.customerName === c.customerName && r.material === c.material
+          );
+          if (rateRec && rateRec.rate) {
+            amt = c.brass * rateRec.rate;
+          }
+        }
+        dailyMap[date].income += amt;
       }
     });
 
     state.maintenance.forEach(m => {
-      const date = m.date.split('T')[0];
+      const date = (m.date || '').split('T')[0];
       if (dailyMap[date]) {
         dailyMap[date].expense += m.amount;
       }
     });
 
     state.salaries.forEach(s => {
-      const date = s.date.split('T')[0];
+      const date = (s.date || '').split('T')[0];
       if (dailyMap[date]) {
         dailyMap[date].expense += s.amount;
       }
@@ -644,8 +682,15 @@ export default function OwnerDashboard({
                 </td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main">{customer.material}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.brass} <span className="text-text-muted font-normal uppercase tracking-tighter">BRS</span></td>
-                <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatCurrency(customer.rate)}</td>
-                <td className="px-6 py-4 text-xs font-bold text-text-main">{formatCurrency(customer.amount)}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-muted">{customer.customerType === 'REGULAR' ? '-' : formatCurrency(customer.rate)}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">
+                  {customer.customerType === 'REGULAR' ? (
+                    (() => {
+                      const rateRec = state.customerRates.find(r => r.customerName === customer.customerName && r.material === customer.material);
+                      return formatCurrency(rateRec && rateRec.rate ? customer.brass * rateRec.rate : 0);
+                    })()
+                  ) : formatCurrency(customer.amount)}
+                </td>
                 <td className="px-6 py-4 text-xs font-bold text-success">
                   {customer.customerType === 'REGULAR' ? '-' : formatCurrency(customer.paidAmount)}
                 </td>
@@ -667,7 +712,7 @@ export default function OwnerDashboard({
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-2">
                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary border border-primary/20">
-                      {customer.addedBy.split(' ').map(n => n[0]).join('')}
+                      {(customer.addedBy || '').split(' ').map(n => n[0]).join('')}
                     </div>
                     <span className="text-[10px] font-bold text-text-muted uppercase">{customer.addedBy}</span>
                   </div>
@@ -776,12 +821,9 @@ export default function OwnerDashboard({
               <Calendar className="h-4 w-4 mr-2 text-primary" /> Pending Actions
             </h4>
             <div className="space-y-3">
-              {['March 2024 - Ganpat Rao', 'March 2024 - assistant'].map((item) => (
-                <div key={item} className="flex justify-between items-center text-[10px] p-3 bg-bg-surface rounded-lg border border-border-subtle border-dashed">
-                  <span className="font-bold text-text-main uppercase tracking-tight">{item}</span>
-                  <button className="text-primary font-bold hover:underline tracking-widest">PROCESS</button>
-                </div>
-              ))}
+              <div className="flex justify-between items-center text-[10px] p-3 bg-bg-surface rounded-lg border border-border-subtle border-dashed">
+                <span className="font-bold text-text-muted uppercase tracking-tight italic">No pending salary actions</span>
+              </div>
             </div>
           </div>
         </div>
@@ -817,67 +859,97 @@ export default function OwnerDashboard({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredAssistants.map((assistant) => (
-          <motion.div 
-            key={assistant.id}
-            whileHover={{ y: -2 }}
-            className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm relative overflow-hidden group"
-          >
-            <div className="absolute top-0 right-0 p-4 flex space-x-2">
-              <button 
-                onClick={() => handleRemoveAssistant(assistant.id)}
-                className="text-text-muted hover:text-danger transition-colors p-1"
-                title="Remove Assistant"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="h-10 w-10 bg-bg-surface border border-border-subtle rounded-full flex items-center justify-center text-text-main font-bold text-xs">
-                {assistant.name.split(' ').map(n => n[0]).join('')}
+        {filteredAssistants.map((assistant) => {
+          const billingCount = state.customers.filter(c => c.addedById === assistant.id).length;
+          const maintenanceCount = state.maintenance.filter(m => m.addedById === assistant.id).length;
+          
+          return (
+            <motion.div 
+              key={assistant.id}
+              whileHover={{ y: -2 }}
+              className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm relative overflow-hidden group"
+            >
+              <div className="absolute top-0 right-0 p-4 flex space-x-2">
+                <button 
+                  onClick={() => handleRemoveAssistant(assistant.id)}
+                  className="text-text-muted hover:text-danger transition-colors p-1"
+                  title="Remove Assistant"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
-              <div>
-                <h4 className="text-sm font-bold text-text-main uppercase">{assistant.name}</h4>
-                <p className="text-text-muted text-[10px] font-bold">{assistant.phone}</p>
+              <div className="flex items-center space-x-4">
+                <div className="h-10 w-10 bg-bg-surface border border-border-subtle rounded-full flex items-center justify-center text-text-main font-bold text-xs uppercase">
+                  {(assistant.name || '').split(' ').map(n => n[0]).join('')}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-text-main uppercase">{assistant.name}</h4>
+                  <p className="text-text-muted text-[10px] font-bold">{assistant.phone}</p>
+                </div>
               </div>
-            </div>
-            <div className="mt-6 space-y-3">
-              <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
-                <span className="text-text-muted">System Access</span>
-                <span className="text-warning">Restricted</span>
+              
+              <div className="mt-6 pt-6 border-t border-border-subtle">
+                <p className="text-[9px] font-black text-text-muted uppercase tracking-widest mb-3">Activity Metrics</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-bg-surface rounded-lg border border-border-subtle">
+                    <p className="text-sm font-black text-text-main">{billingCount}</p>
+                    <p className="text-[8px] font-bold text-text-muted uppercase mt-0.5">Billings</p>
+                  </div>
+                  <div className="p-3 bg-bg-surface rounded-lg border border-border-subtle">
+                    <p className="text-sm font-black text-text-main">{maintenanceCount}</p>
+                    <p className="text-[8px] font-bold text-text-muted uppercase mt-0.5">Maint Logs</p>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 font-bold uppercase">
-                <span className="px-2 py-0.5 bg-success/5 text-success rounded text-[9px]">Data Entry</span>
-                <span className="px-2 py-0.5 bg-success/5 text-success rounded text-[9px]">View Logs</span>
-                <span className="px-2 py-0.5 bg-danger/5 text-danger rounded text-[9px]">No Financials</span>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest">
+                  <span className="text-text-muted">System Access</span>
+                  <span className="text-warning">Restricted</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 font-bold uppercase">
+                  <span className="px-2 py-0.5 bg-success/5 text-success rounded text-[9px]">Data Entry</span>
+                  <span className="px-2 py-0.5 bg-success/5 text-success rounded text-[9px]">View Logs</span>
+                  <span className="px-2 py-0.5 bg-danger/5 text-danger rounded text-[9px]">No Financials</span>
+                </div>
               </div>
-            </div>
-            <button className="w-full mt-6 py-2 bg-bg-surface text-text-main text-[10px] font-bold uppercase border border-border-subtle rounded-lg hover:bg-border-subtle transition-colors tracking-widest">
-              ACTIVITY LOGS
-            </button>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
 
-  const renderKhata = () => {
-    const clients = state.khataClients.filter(c => 
-      c.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+   const renderKhata = () => {
+     const clients = (state.khataClients || []).filter(c => 
+       c != null && 
+       typeof c === 'string' && 
+       c.toLowerCase().includes((searchTerm || '').toLowerCase())
+     );
 
     const clientRates = state.customerRates.filter(r => r.customerName === selectedKhataClient);
     
     // Financial Summary for Selected Khata Client
     const clientTransactions = state.customers.filter(c => 
-      c.customerName.trim().toUpperCase() === selectedKhataClient?.trim().toUpperCase()
+      selectedKhataClient && 
+      c.customerName.trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
     );
     const clientPayments = state.khataPayments.filter(p => 
-      p.customerName.trim().toUpperCase() === selectedKhataClient?.trim().toUpperCase()
+      selectedKhataClient && 
+      p.customerName.trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
     );
     
-    const clientTotalValuation = clientTransactions.reduce((acc, curr) => acc + curr.amount, 0);
-    // Note: Regular clients might have old paidAmount values, but moving forward we use khataPayments
+    const getAmount = (c: any) => {
+      const rateRec = state.customerRates.find(r => 
+        r.customerName === c.customerName && r.material === c.material
+      );
+      if (rateRec && rateRec.rate) {
+        return c.brass * rateRec.rate;
+      }
+      return c.amount;
+    };
+    
+    const clientTotalValuation = clientTransactions.reduce((acc, curr) => acc + getAmount(curr), 0);
     const clientTransactionsPaid = clientTransactions.reduce((acc, curr) => acc + curr.paidAmount, 0);
     const clientKhataPayments = clientPayments.reduce((acc, curr) => acc + curr.amount, 0);
     
@@ -1154,6 +1226,143 @@ export default function OwnerDashboard({
     );
   };
 
+  const renderMaintenance = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-text-main">Operations & Maintenance</h2>
+          <p className="text-sm text-text-muted">Monitor industrial asset logs and expenditure tracking</p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative w-full sm:w-auto">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+            <input 
+              type="text" 
+              placeholder="Search logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 bg-white border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full sm:w-56"
+            />
+          </div>
+          <button 
+            onClick={() => setIsMaintenanceModalOpen(true)}
+            className="flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/10 whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4 mr-2" /> LOG MAINTENANCE
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Maintenance Stats */}
+        <div className="lg:col-span-1 space-y-4">
+          <div className="bg-[#0F172A] p-6 rounded-xl text-white shadow-xl">
+            <Wrench className="h-6 w-6 mb-4 text-primary" />
+            <h4 className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Total Maintenance Cost</h4>
+            <p className="text-2xl font-black mt-2 tracking-tight">
+              {formatCurrency(state.maintenance.reduce((acc, curr) => acc + curr.amount, 0))}
+            </p>
+            <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center text-[10px] font-bold text-white/40 uppercase tracking-tighter">
+              <span>Monthly Avg</span>
+              <span className="text-white/60">₹{Math.round(state.maintenance.reduce((acc, curr) => acc + curr.amount, 0) / 12).toLocaleString()}</span>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm">
+            <h4 className="text-[10px] font-bold text-text-main uppercase tracking-widest mb-4 flex items-center">
+              <Filter className="h-3 w-3 mr-2 text-primary" /> Category Distribution
+            </h4>
+            <div className="space-y-3">
+              {Array.from(new Set(state.maintenance.map(m => m.type))).slice(0, 4).map((type) => {
+                const total = state.maintenance.filter(m => m.type === type).reduce((acc, curr) => acc + curr.amount, 0);
+                const percentage = Math.round((total / (state.maintenance.reduce((acc, curr) => acc + curr.amount, 0) || 1)) * 100);
+                return (
+                  <div key={type} className="space-y-1.5">
+                    <div className="flex justify-between text-[9px] font-bold uppercase tracking-tight">
+                      <span className="text-text-main">{type}</span>
+                      <span className="text-text-muted">{percentage}%</span>
+                    </div>
+                    <div className="h-1 bg-bg-surface rounded-full overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${percentage}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Maintenance Log Registry */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <div className="inline-block min-w-full align-middle">
+              <table className="min-w-full w-full text-left">
+                <thead>
+                  <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
+                    <th className="px-6 py-4">Service Date</th>
+                    <th className="px-6 py-4">Entry Details</th>
+                    <th className="px-6 py-4">Logged By</th>
+                    <th className="px-6 py-4 text-right">Expenditure</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle">
+                  {filteredMaintenance.map((m) => (
+                    <tr key={m.id} className="hover:bg-bg-surface/30 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold text-text-main">{formatDate(m.date)}</span>
+                          <span className="text-[9px] text-text-muted font-medium uppercase tracking-tighter">ID: {m.id}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-text-main uppercase tracking-tight">{m.type}</span>
+                          {m.description && (
+                            <span className="text-[10px] text-text-muted mt-0.5 line-clamp-1 italic">{m.description}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary border border-primary/20 mr-2 uppercase">
+                            {(m.addedBy || 'U').split(' ').map(n => n[0]).join('')}
+                          </div>
+                          <span className="text-[10px] font-bold text-text-muted uppercase tracking-tight">{m.addedBy || 'Unknown'}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="text-sm font-black text-danger">{formatCurrency(m.amount)}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end space-x-2">
+                          <button 
+                            onClick={() => deleteRecord('maintenance', m.id)}
+                            className="p-2 text-text-muted hover:text-danger hover:bg-danger/5 rounded-lg transition-all"
+                            title="Delete Record"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredMaintenance.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-20 text-center text-text-muted italic text-xs font-medium">
+                        No maintenance records found matching your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-full">
       <AnimatePresence mode="wait">
@@ -1166,62 +1375,7 @@ export default function OwnerDashboard({
         >
           {activeTab === 'dashboard' && renderDashboard()}
           {activeTab === 'customers' && renderCustomers()}
-          {activeTab === 'maintenance' && (
-            <div className="bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden min-h-[400px]">
-              <div className="px-6 py-5 border-b border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white">
-                <div>
-                  <h3 className="text-base font-bold text-text-main uppercase tracking-tight">Operation & Maintenance Registry</h3>
-                  <p className="text-xs text-text-muted mt-0.5 font-medium uppercase tracking-tighter">Detailed expenditure logs for industrial assets</p>
-                </div>
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                  <div className="relative w-full sm:w-auto">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-                    <input 
-                      type="text" 
-                      placeholder="Filter maintenance..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 pr-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full sm:w-64"
-                    />
-                  </div>
-                  <button 
-                    onClick={() => setIsMaintenanceModalOpen(true)}
-                    className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-dark transition-all shadow-md shadow-primary/10 whitespace-nowrap"
-                  >
-                    <Plus className="h-4 w-4 mr-2" /> LOG MAINTENANCE
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredMaintenance.map(m => (
-                  <div key={m.id} className="p-5 bg-bg-surface rounded-xl border border-border-subtle hover:border-primary/30 transition-all group relative">
-                    <button 
-                      onClick={() => deleteRecord('maintenance', m.id)}
-                      className="absolute top-2 right-2 p-1 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="bg-white p-2 rounded-lg border border-border-subtle">
-                        <Wrench className="h-4 w-4 text-primary" />
-                      </div>
-                      <span className="text-xs font-bold text-danger bg-danger/5 px-2 py-1 rounded tracking-tight">
-                        {formatCurrency(m.amount)}
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-bold text-text-main uppercase">{m.type}</h4>
-                      <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest">{formatDate(m.date)}</p>
-                    </div>
-                    <div className="mt-4 pt-4 border-t border-border-subtle border-dashed flex justify-between items-center">
-                      <span className="text-[9px] font-bold text-text-muted uppercase tracking-tighter">Reference ID: {m.id}</span>
-                      <button className="text-[9px] font-black text-primary uppercase tracking-[0.2em] hover:underline">DETAILS</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeTab === 'maintenance' && renderMaintenance()}
           {activeTab === 'salaries' && renderSalaries()}
           {activeTab === 'khata' && renderKhata()}
           {activeTab === 'staff' && renderAssistants()}
@@ -1309,7 +1463,14 @@ export default function OwnerDashboard({
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Name</label>
             <input 
-              type="text" required value={custName} onChange={e => setCustName(e.target.value)}
+              type="text" required value={custName} onChange={e => {
+                setCustName(e.target.value);
+                // Check if Khata client
+                const name = (e.target.value || '').trim().toUpperCase();
+                const isKhata = state.khataClients.some(k => (k || '').trim().toUpperCase() === name);
+                if (isKhata) setCustType('REGULAR');
+                else if (name) setCustType('OTHER');
+              }}
               list="khata-customers"
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
               placeholder="Enter customer name"
@@ -1343,14 +1504,16 @@ export default function OwnerDashboard({
                 placeholder="0.00"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Rate (₹)</label>
-              <input 
-                type="number" required value={rate} onChange={e => setRate(e.target.value)}
-                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
-                placeholder="0.00"
-              />
-            </div>
+            {custType !== 'REGULAR' && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Rate (₹)</label>
+                <input 
+                  type="number" required value={rate} onChange={e => setRate(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
+                  placeholder="0.00"
+                />
+              </div>
+            )}
           </div>
           {custType !== 'REGULAR' && (
             <div className="space-y-1.5">

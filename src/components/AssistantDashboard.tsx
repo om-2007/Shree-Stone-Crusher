@@ -75,6 +75,7 @@ export default function AssistantDashboard({
   const [vehicle, setVehicle] = useState('');
   const [material, setMaterial] = useState('');
   const [brass, setBrass] = useState('');
+  const [asstRate, setAsstRate] = useState('');
 
   const uniqueKhataCustomers = useMemo(() => 
     Array.from(new Set(state.customerRates.map(r => r.customerName))),
@@ -107,19 +108,24 @@ export default function AssistantDashboard({
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Check Khata for automatic rate assignment in background
     let finalRate = 0;
-    if (custName.trim() && material.trim()) {
-      const match = state.customerRates.find(
-        r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase() &&
-             r.material.trim().toUpperCase() === material.trim().toUpperCase()
-      );
-      if (match) {
-        finalRate = match.rate;
+    if (custType === 'REGULAR') {
+      // Check Khata for automatic rate assignment in background
+      if (custName.trim() && material.trim()) {
+        const match = state.customerRates.find(
+          r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase() &&
+               r.material.trim().toUpperCase() === material.trim().toUpperCase()
+        );
+        if (match) {
+          finalRate = match.rate;
+        }
       }
+    } else {
+      // Use the rate entered by assistant for one-time clients
+      finalRate = parseFloat(asstRate) || 0;
     }
 
-    const newEntry: CustomerEntry = {
+    const newEntry = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       vehicleNumber: vehicle,
@@ -132,25 +138,31 @@ export default function AssistantDashboard({
       paidAmount: 0,
       status: 'PENDING',
       addedBy: state.currentUser?.name || 'Unknown',
+      addedById: state.currentUser?.id || '',
     };
-    setCustomers(prev => [newEntry, ...prev]);
+    // Sync to backend
+    (setCustomers as any)(newEntry);
     setShowEntryForm('NONE');
     setCustName('');
     setVehicle('');
     setMaterial('');
     setBrass('');
+    setAsstRate('');
   };
 
   const handleAddMaintenance = (e: React.FormEvent) => {
     e.preventDefault();
-    const newEntry: MaintenanceEntry = {
+    const newEntry = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       type: mType,
       amount: parseFloat(mAmount),
-      addedById: state.currentUser?.id || 'Unknown',
+      description: '',
+      addedBy: state.currentUser?.name || 'Unknown',
+      addedById: state.currentUser?.id || '',
     };
-    setMaintenance(prev => [newEntry, ...prev]);
+    // Sync to backend
+    (setMaintenance as any)(newEntry);
     setShowEntryForm('NONE');
     setMType('');
     setMAmount('');
@@ -266,7 +278,7 @@ export default function AssistantDashboard({
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
                         <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary border border-primary/20">
-                          {c.addedBy.split(' ').map(n => n[0]).join('')}
+                          {(c.addedBy || '').split(' ').map(n => n[0]).join('')}
                         </div>
                         <span className="text-[9px] font-bold text-text-muted uppercase">{c.addedBy}</span>
                       </div>
@@ -297,8 +309,13 @@ export default function AssistantDashboard({
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-2 px-2">
-        <MapPin className="h-4 w-4 text-primary" />
-        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.2em]">Operational Status: Online • Main Facility</span>
+        <div className={cn(
+          "w-2 h-2 rounded-full animate-pulse",
+          state.isDayStarted ? "bg-success" : "bg-danger"
+        )} />
+        <span className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em]">
+          Operational Status: {state.isDayStarted ? 'Online • Main Facility' : 'Strictly Locked • Review Mode Only'}
+        </span>
       </div>
       
       <div className="min-h-[500px]">
@@ -310,7 +327,28 @@ export default function AssistantDashboard({
             exit={{ opacity: 0, x: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === 'dashboard' && renderDashboard()}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                {!state.isDayStarted && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-danger/5 border-2 border-dashed border-danger/20 p-8 rounded-2xl flex flex-col items-center text-center space-y-4 mb-8"
+                  >
+                    <div className="bg-danger p-4 rounded-full shadow-lg shadow-danger/20">
+                      <Lock className="h-8 w-8 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-black text-text-main uppercase tracking-tight">Administrative Lockdown</h2>
+                      <p className="text-xs text-text-muted font-bold uppercase tracking-tighter mt-1 max-w-md mx-auto leading-relaxed">
+                        The business day has not been started. All data entry and modification privileges are currently revoked. Please contact administration to resume logging.
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+                {renderDashboard()}
+              </div>
+            )}
             
             {activeTab === 'customers' && (
               <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-8 text-center">
@@ -493,6 +531,25 @@ export default function AssistantDashboard({
               />
             </div>
           </div>
+
+          {custType === 'OTHER' && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="space-y-1.5"
+            >
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Manual Rate (₹ per BRS)</label>
+              <div className="relative">
+                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+                <input 
+                  type="number" required value={asstRate} onChange={e => setAsstRate(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold"
+                  placeholder="Enter Agreed Rate"
+                />
+              </div>
+            </motion.div>
+          )}
+
           <div className="pt-4">
             <button 
               type="submit"

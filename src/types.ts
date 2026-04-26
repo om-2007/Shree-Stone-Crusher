@@ -36,6 +36,7 @@ export interface MaintenanceEntry {
   type: string;
   amount: number; // Input by Assistant, hidden in UI for Assistant
   description?: string;
+  addedBy?: string;
   addedById: string; // To track who added the maintenance record
 }
 

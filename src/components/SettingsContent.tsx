@@ -21,25 +21,38 @@ export default function SettingsContent({ user, settings, onSettingsChange, onPr
     setProfilePhone(user.phone || '');
   }, [user]);
 
-  const toggleSetting = (key: keyof NotificationSettings) => {
-    onSettingsChange(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+  const toggleSetting = async (key: keyof NotificationSettings) => {
+    const newSettings = {
+      ...settings,
+      [key]: !settings[key]
+    };
+    onSettingsChange(newSettings);
+    // Auto-sync notification toggles if you want immediate persistence, 
+    // or keep it in handleSave. Usually immediate is better for toggles.
+    await onProfileUpdate({
+      id: user.id,
+      name: profileName,
+      phone: profilePhone,
+      role: user.role,
+      ...newSettings
+    } as any);
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    if (activeSubTab === 'profile') {
-      await onProfileUpdate({
-        id: user.id,
-        name: profileName,
-        phone: profilePhone,
-        role: user.role
-      });
+    try {
+      if (activeSubTab === 'profile') {
+        await onProfileUpdate({
+          id: user.id,
+          name: profileName,
+          phone: profilePhone,
+          role: user.role,
+          ...settings
+        } as any);
+      }
+    } finally {
+      setIsSaving(false);
     }
-    // Notifications are updated via onSettingsChange parent hook already
-    setIsSaving(false);
   };
 
   return (

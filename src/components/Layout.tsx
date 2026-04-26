@@ -210,7 +210,7 @@ export default function Layout({
                 {user.role} Access
               </span>
               <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-600 text-sm">
-                {user.name.split(' ').map(n => n[0]).join('')}
+                {(user.name || '').split(' ').map(n => n[0]).join('')}
               </div>
             </div>
           </div>
