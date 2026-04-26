@@ -5,10 +5,12 @@ import { LogoIcon } from './LogoIcon';
 import { UserRole } from '../types';
 
 interface LoginPageProps {
-  onLogin: (name: string, role: UserRole) => void;
+  onLogin: (name: string, role: UserRole, password?: string) => boolean;
+  assistants: any[];
+  ownerProfile: any;
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPageProps) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -18,14 +20,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     e.preventDefault();
     setError('');
 
-    // Mock login logic using names
-    if (name === 'Kiran Chavan' && password === '123456') {
-      onLogin(name, 'OWNER');
-    } else if (name === 'assistant' && password === '123456') {
-      onLogin(name, 'ASSISTANT');
-    } else {
-      setError('Invalid credentials. Please contact administration if you cannot log in.');
+    // Owner check (checking against profile from DB)
+    const ownerName = ownerProfile?.name || 'Kiran Chavan';
+    if (name.toLowerCase() === ownerName.toLowerCase()) {
+      const success = onLogin(name, 'OWNER', password);
+      if (success) return;
     }
+
+    // Assistant check from DB
+    const success = onLogin(name, 'ASSISTANT', password);
+    if (success) return;
+
+    setError('Invalid credentials. Please contact administration if you cannot log in.');
   };
 
   return (

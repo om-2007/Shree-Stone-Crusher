@@ -1,21 +1,45 @@
-import React, { useState } from 'react';
-import { User, Bell, ShieldCheck, ToggleLeft, ToggleRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User as UserIcon, Bell, ShieldCheck, ToggleLeft, ToggleRight, Save } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { NotificationSettings } from '../types';
+import { NotificationSettings, User } from '../types';
 
 interface SettingsContentProps {
+  user: User;
   settings: NotificationSettings;
   onSettingsChange: React.Dispatch<React.SetStateAction<NotificationSettings>>;
+  onProfileUpdate: (userData: { id: string, name: string, phone: string, role: string }) => Promise<void>;
 }
 
-export default function SettingsContent({ settings, onSettingsChange }: SettingsContentProps) {
+export default function SettingsContent({ user, settings, onSettingsChange, onProfileUpdate }: SettingsContentProps) {
   const [activeSubTab, setActiveSubTab] = useState<'profile' | 'notifications'>('profile');
+  const [profileName, setProfileName] = useState(user.name);
+  const [profilePhone, setProfilePhone] = useState(user.phone || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setProfileName(user.name);
+    setProfilePhone(user.phone || '');
+  }, [user]);
 
   const toggleSetting = (key: keyof NotificationSettings) => {
     onSettingsChange(prev => ({
       ...prev,
       [key]: !prev[key]
     }));
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    if (activeSubTab === 'profile') {
+      await onProfileUpdate({
+        id: user.id,
+        name: profileName,
+        phone: profilePhone,
+        role: user.role
+      });
+    }
+    // Notifications are updated via onSettingsChange parent hook already
+    setIsSaving(false);
   };
 
   return (
@@ -28,8 +52,8 @@ export default function SettingsContent({ settings, onSettingsChange }: Settings
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div className="md:col-span-1 space-y-2">
           {[
-            { id: 'profile', label: 'Identity & Profile', icon: User },
-            { id: 'notifications', label: 'Push Notifications', icon: Bell },
+            { id: 'profile', label: 'Identity & Profile', icon: UserIcon },
+            ...(user.role === 'OWNER' ? [{ id: 'notifications', label: 'Push Notifications', icon: Bell }] : []),
           ].map((item) => (
             <button
               key={item.id}
@@ -51,21 +75,21 @@ export default function SettingsContent({ settings, onSettingsChange }: Settings
           {activeSubTab === 'profile' ? (
             <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-6">
               <h3 className="text-sm font-bold text-text-main uppercase tracking-widest mb-6 flex items-center">
-                <User className="h-4 w-4 mr-2 text-primary" /> Personal Identity
+                <UserIcon className="h-4 w-4 mr-2 text-primary" /> Personal Identity
               </h3>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-text-muted uppercase">Full Name</label>
                     <input 
-                      type="text" defaultValue="Kiran Chavan"
+                      type="text" value={profileName} onChange={e => setProfileName(e.target.value)}
                       className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-text-muted uppercase">Primary Contact</label>
                     <input 
-                      type="text" defaultValue="+91 9876543210"
+                      type="text" value={profilePhone} onChange={e => setProfilePhone(e.target.value)}
                       className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
                     />
                   </div>
@@ -73,12 +97,13 @@ export default function SettingsContent({ settings, onSettingsChange }: Settings
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-text-muted uppercase">Designation Role</label>
                   <div className="px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-primary uppercase tracking-widest">
-                    Administrative Owner
+                    {user.role === 'OWNER' ? 'Administrative Owner' : 'Assistant Staff'}
                   </div>
                 </div>
               </div>
             </div>
           ) : (
+            user.role === 'OWNER' && (
             <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-6">
               <h3 className="text-sm font-bold text-text-main uppercase tracking-widest mb-6 flex items-center">
                 <Bell className="h-4 w-4 mr-2 text-primary" /> Notification Triggers
@@ -138,11 +163,17 @@ export default function SettingsContent({ settings, onSettingsChange }: Settings
                 </div>
               </div>
             </div>
+            )
           )}
 
           <div className="flex justify-end pt-4">
-            <button className="px-8 py-3 bg-primary text-white font-bold uppercase tracking-[0.2em] text-[10px] rounded-lg shadow-xl shadow-primary/20 hover:bg-primary-dark transition-all">
-              Save Configuration
+            <button 
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-8 py-3 bg-primary text-white font-bold uppercase tracking-[0.2em] text-[10px] rounded-lg shadow-xl shadow-primary/20 hover:bg-primary-dark transition-all flex items-center"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {isSaving ? 'Saving...' : 'Save Configuration'}
             </button>
           </div>
         </div>

@@ -1,24 +1,228 @@
 import { useState, useMemo, useEffect } from 'react';
 import { User, AppState, UserRole, CustomerRate } from './types';
-import { MOCK_OWNER, MOCK_ASSISTANTS, MOCK_CUSTOMERS, MOCK_MAINTENANCE, MOCK_SALARIES, MOCK_CUSTOMER_RATES, MOCK_KHATA_CLIENTS, MOCK_KHATA_PAYMENTS } from './mockData';
+// Removed mock imports to lean purely on database
 import LoginPage from './components/LoginPage';
+
+const DEFAULT_OWNER: User = {
+  id: 'owner-1',
+  name: 'ADMIN',
+  role: 'OWNER',
+  phone: '0000000000'
+};
 import Layout from './components/Layout';
 import OwnerDashboard from './components/OwnerDashboard';
 import AssistantDashboard from './components/AssistantDashboard';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('currentUser');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error('Failed to parse saved user', e);
+      return null;
+    }
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'dashboard';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
   
   // App state
-  const [customers, setCustomers] = useState(MOCK_CUSTOMERS);
-  const [maintenance, setMaintenance] = useState(MOCK_MAINTENANCE);
-  const [salaries, setSalaries] = useState(MOCK_SALARIES);
-  const [assistants, setAssistants] = useState(MOCK_ASSISTANTS);
-  const [customerRates, setCustomerRates] = useState(MOCK_CUSTOMER_RATES);
-  const [khataClients, setKhataClients] = useState(MOCK_KHATA_CLIENTS);
-  const [khataPayments, setKhataPayments] = useState(MOCK_KHATA_PAYMENTS);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [maintenance, setMaintenance] = useState<any[]>([]);
+  const [salaries, setSalaries] = useState<any[]>([]);
+  const [assistants, setAssistants] = useState<any[]>([]);
+  const [customerRates, setCustomerRates] = useState<any[]>([]);
+  const [khataClients, setKhataClients] = useState<any[]>([]);
+  const [khataPayments, setKhataPayments] = useState<any[]>([]);
+  const [ownerProfile, setOwnerProfile] = useState<any>(null);
   const [isDayStarted, setIsDayStarted] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Persistence effect for session
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('currentUser');
+    }
+  }, [currentUser]);
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetch('/api/data')
+      .then(res => res.json())
+      .then(data => {
+        setCustomers(data.customers);
+        setMaintenance(data.maintenance);
+        setSalaries(data.salaries);
+        setKhataPayments(data.khataPayments);
+        setAssistants(data.assistants);
+        setCustomerRates(data.customerRates);
+        setKhataClients(data.khataClients);
+        setOwnerProfile(data.ownerProfile);
+        
+        // If we are logged in as owner, update currently saved info with latest from DB
+        const saved = localStorage.getItem('currentUser');
+        if (saved) {
+          const user = JSON.parse(saved);
+          if (user.role === 'OWNER' && data.ownerProfile) {
+            setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
+          }
+        }
+        
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch data', err);
+        setLoading(false);
+      });
+  }, []);
+
+  const deleteRecord = async (collection: string, id: string) => {
+    try {
+      const res = await fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (collection === 'customers') setCustomers(prev => prev.filter(c => c.id !== id));
+        if (collection === 'maintenance') setMaintenance(prev => prev.filter(m => m.id !== id));
+        if (collection === 'salaries') setSalaries(prev => prev.filter(s => s.id !== id));
+        if (collection === 'khata-payments') setKhataPayments(prev => prev.filter(p => p.id !== id));
+        if (collection === 'assistants') setAssistants(prev => prev.filter(a => a.id !== id));
+        if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
+        if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c !== id));
+      }
+    } catch (e) {
+      console.error('Failed to delete record', e);
+    }
+  };
+
+  const syncProfile = async (userData: { id: string, name: string, phone: string, role: string }) => {
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+      if (res.ok) {
+        setCurrentUser(prev => prev ? { ...prev, name: userData.name, phone: userData.phone } : null);
+        if (userData.role === 'OWNER') {
+          setOwnerProfile(prev => ({ ...prev, name: userData.name, phone: userData.phone }));
+        } else {
+          setAssistants(prev => prev.map(a => a.id === userData.id ? { ...a, name: userData.name, phone: userData.phone } : a));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update profile', e);
+    }
+  };
+
+  const syncCustomer = async (data: any) => {
+    const newCustomer = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCustomer)
+      });
+      const stored = await res.json();
+      setCustomers(prev => [stored, ...prev]);
+    } catch (e) {
+      console.error('Failed to sync customer', e);
+    }
+  };
+
+  const syncMaintenance = async (data: any) => {
+    const newMaint = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/maintenance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMaint)
+      });
+      const stored = await res.json();
+      setMaintenance(prev => [stored, ...prev]);
+    } catch (e) {
+      console.error('Failed to sync maintenance', e);
+    }
+  };
+
+  const syncSalary = async (data: any) => {
+    const newSalary = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/salaries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSalary)
+      });
+      const stored = await res.json();
+      setSalaries(prev => [stored, ...prev]);
+    } catch (e) {
+      console.error('Failed to sync salary', e);
+    }
+  };
+
+  const syncKhataPayment = async (data: any) => {
+    const newPayment = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/khata-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPayment)
+      });
+      const stored = await res.json();
+      setKhataPayments(prev => [stored, ...prev]);
+    } catch (e) {
+      console.error('Failed to sync khata payment', e);
+    }
+  };
+
+  const syncAssistant = async (data: any) => {
+    const newAssistant = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/assistants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAssistant)
+      });
+      const stored = await res.json();
+      setAssistants(prev => [...prev, stored]);
+    } catch (e) {
+      console.error('Failed to sync assistant', e);
+    }
+  };
+
+  const syncCustomerRate = async (data: any) => {
+    const newRate = typeof data === 'function' ? data([])[0] : data;
+    try {
+      const res = await fetch('/api/customer-rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRate)
+      });
+      const stored = await res.json();
+      setCustomerRates(prev => [stored, ...prev]);
+    } catch (e) {
+      console.error('Failed to sync customer rate', e);
+    }
+  };
+
+  const syncKhataClient = async (clientName: string) => {
+    try {
+      const res = await fetch('/api/khata-clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: clientName })
+      });
+      const stored = await res.json();
+      setKhataClients(prev => [...prev, stored.name]);
+    } catch (e) {
+      console.error('Failed to sync khata client', e);
+    }
+  };
   const [readNotifications, setReadNotifications] = useState<string[]>([]);
   const [nativeNotifiedIds, setNativeNotifiedIds] = useState<string[]>([]);
   const [notificationSettings, setNotificationSettings] = useState({
@@ -109,7 +313,6 @@ export default function App() {
             const n = new Notification(alert.title, {
               body: alert.message,
               tag: alert.id,
-              renotify: true
             });
             n.onclick = () => {
               window.focus();
@@ -124,14 +327,33 @@ export default function App() {
     }
   }, [notifications, currentUser, nativeNotifiedIds]);
 
-  const handleLogin = (name: string, role: UserRole) => {
+  const handleLogin = (name: string, role: UserRole, password?: string): boolean => {
     if (role === 'OWNER') {
-      setCurrentUser(MOCK_OWNER);
+      const storedPassword = ownerProfile?.password || '123456';
+      // Owner login - checking against dynamic profile if available
+      if (name === (ownerProfile?.name || 'Kiran Chavan') && password === storedPassword) {
+        setCurrentUser({ ...ownerProfile, role: 'OWNER' });
+        setActiveTab('dashboard');
+        return true;
+      }
     } else {
-      const assistant = MOCK_ASSISTANTS.find(a => a.name === name);
-      setCurrentUser(assistant || MOCK_ASSISTANTS[0]);
+      const assistant = assistants.find(a => a.name.toLowerCase() === name.toLowerCase());
+      if (assistant) {
+        // Use stored password or fall back to default
+        const storedPassword = assistant.password || '123456';
+        if (password === storedPassword) {
+          setCurrentUser({ 
+            id: assistant.id,
+            name: assistant.name,
+            phone: assistant.phone || '0000000000',
+            role: 'ASSISTANT' 
+          });
+          setActiveTab('dashboard');
+          return true;
+        }
+      }
     }
-    setActiveTab('dashboard');
+    return false;
   };
 
   const handleLogout = () => {
@@ -152,8 +374,17 @@ export default function App() {
     isDayStarted,
   };
 
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-bg-surface">
+        <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted">Initializing Encrypted Database...</p>
+      </div>
+    );
+  }
+
   if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} assistants={assistants} ownerProfile={ownerProfile} />;
   }
 
   return (
@@ -170,21 +401,25 @@ export default function App() {
           state={appState} 
           setIsDayStarted={setIsDayStarted}
           activeTab={activeTab}
-          setCustomers={setCustomers}
-          setMaintenance={setMaintenance}
-          setSalaries={setSalaries}
-          setAssistants={setAssistants}
-          setCustomerRates={setCustomerRates}
-          setKhataClients={setKhataClients}
-          setKhataPayments={setKhataPayments}
+          setCustomers={syncCustomer as any}
+          setMaintenance={syncMaintenance as any}
+          setSalaries={syncSalary as any}
+          setAssistants={syncAssistant as any}
+          setCustomerRates={syncCustomerRate as any}
+          setKhataClients={syncKhataClient as any}
+          setKhataPayments={syncKhataPayment as any}
           setNotificationSettings={setNotificationSettings}
+          deleteRecord={deleteRecord}
+          syncProfile={syncProfile}
         />
       ) : (
         <AssistantDashboard 
           state={appState} 
           activeTab={activeTab}
-          setCustomers={setCustomers}
-          setMaintenance={setMaintenance}
+          setCustomers={syncCustomer as any} 
+          setMaintenance={syncMaintenance as any}
+          deleteRecord={deleteRecord}
+          syncProfile={syncProfile}
         />
       )}
     </Layout>

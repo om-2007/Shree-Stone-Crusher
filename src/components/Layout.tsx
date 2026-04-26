@@ -39,7 +39,7 @@ export default function Layout({
     { id: 'salaries', label: 'Salaries', icon: HardHat, roles: ['OWNER'] },
     { id: 'staff', label: 'Assistants', icon: Users, roles: ['OWNER'] },
     { id: 'khata', label: 'Rate Master (Khata)', icon: BookOpen, roles: ['OWNER'] },
-    { id: 'settings', label: 'Settings', icon: Settings, roles: ['OWNER'] },
+    { id: 'settings', label: 'Settings', icon: Settings, roles: ['OWNER', 'ASSISTANT'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => item.roles.includes(user.role));

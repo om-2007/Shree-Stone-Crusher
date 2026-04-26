@@ -29,6 +29,8 @@ interface OwnerDashboardProps {
   setKhataClients: React.Dispatch<React.SetStateAction<string[]>>;
   setKhataPayments: React.Dispatch<React.SetStateAction<KhataPayment[]>>;
   setNotificationSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>;
+  deleteRecord: (collection: string, id: string) => Promise<void>;
+  syncProfile: (userData: { id: string, name: string, phone: string, role: string }) => Promise<void>;
 }
 
 export default function OwnerDashboard({ 
@@ -42,7 +44,9 @@ export default function OwnerDashboard({
   setCustomerRates,
   setKhataClients,
   setKhataPayments,
-  setNotificationSettings
+  setNotificationSettings,
+  deleteRecord,
+  syncProfile
 }: OwnerDashboardProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<'ALL' | CustomerType>('ALL');
@@ -171,21 +175,22 @@ export default function OwnerDashboard({
   };
 
   const handleRemoveKhataPayment = (id: string) => {
-    setKhataPayments(prev => prev.filter(p => p.id !== id));
+    deleteRecord('khataPayments', id);
   };
 
   const handleRemoveKhataClient = (clientName: string) => {
-    setKhataClients(prev => prev.filter(c => c !== clientName));
+    deleteRecord('khataClients', clientName);
+    // Locally also filter child rates for UI responsiveness if not handled by overall state fetch
     setCustomerRates(prev => prev.filter(r => r.customerName !== clientName));
     if (selectedKhataClient === clientName) setSelectedKhataClient(null);
   };
 
   const handleRemoveKhata = (id: string) => {
-    setCustomerRates(prev => prev.filter(r => r.id !== id));
+    deleteRecord('customerRates', id);
   };
 
   const handleRemoveAssistant = (id: string) => {
-    setAssistants(prev => prev.filter(a => a.id !== id));
+    deleteRecord('assistants', id);
   };
 
   const handleAddSalary = (e: React.FormEvent) => {
@@ -396,17 +401,45 @@ export default function OwnerDashboard({
   }, [state]);
 
   const chartData = useMemo(() => {
-    // Mock daily data for the last 7 days
-    return [
-      { name: 'Mon', income: 45000, expense: 12000 },
-      { name: 'Tue', income: 52000, expense: 15000 },
-      { name: 'Wed', income: 38000, expense: 8000 },
-      { name: 'Thu', income: 65000, expense: 22000 },
-      { name: 'Fri', income: 48000, expense: 19000 },
-      { name: 'Sat', income: 72000, expense: 25000 },
-      { name: 'Sun', income: 30000, expense: 5000 },
-    ];
-  }, []);
+    // Aggregate data by date for the last 7 days
+    const dailyMap: Record<string, { income: number; expense: number }> = {};
+    const today = new Date();
+    
+    // Initialize last 7 days with zeros
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+      dailyMap[dateStr] = { income: 0, expense: 0, name: dayName } as any;
+    }
+
+    state.customers.forEach(c => {
+      const date = c.date.split('T')[0];
+      if (dailyMap[date]) {
+        dailyMap[date].income += c.amount;
+      }
+    });
+
+    state.maintenance.forEach(m => {
+      const date = m.date.split('T')[0];
+      if (dailyMap[date]) {
+        dailyMap[date].expense += m.amount;
+      }
+    });
+
+    state.salaries.forEach(s => {
+      const date = s.date.split('T')[0];
+      if (dailyMap[date]) {
+        dailyMap[date].expense += s.amount;
+      }
+    });
+
+    return Object.values(dailyMap).sort((a: any, b: any) => {
+      // name is short day string, not ideal for sorting, but they are already ordered correctly in the loop above
+      return 0; 
+    });
+  }, [state.customers, state.maintenance, state.salaries]);
 
   const renderDashboard = () => (
     <div className="space-y-8">
@@ -464,11 +497,6 @@ export default function OwnerDashboard({
               <div className={cn("p-2 rounded-lg", stat.bg)}>
                 <stat.icon className={cn("h-5 w-5", stat.color)} />
               </div>
-              {stat.label === 'Net Profit' && (
-                <span className="text-[10px] font-bold text-success uppercase tracking-widest bg-success/10 px-2 py-0.5 rounded-full">
-                  +12.5%
-                </span>
-              )}
             </div>
             <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
             <p className={cn("text-xl font-bold text-text-main tracking-tight", stat.label === 'Total Income' && 'text-success', stat.label === 'Total Expenses' && 'text-danger')}>
@@ -482,8 +510,8 @@ export default function OwnerDashboard({
       <div className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h3 className="text-base font-bold text-text-main">Revenue Breakdown</h3>
-            <p className="text-xs text-text-muted mt-1">Income vs Expenses Analysis</p>
+            <h3 className="text-base font-bold text-text-main">Performance Overview</h3>
+            <p className="text-xs text-text-muted mt-1">Real-time Income vs Expenses</p>
           </div>
           <div className="flex items-center space-x-3">
             <div className="flex items-center">
@@ -496,9 +524,17 @@ export default function OwnerDashboard({
             </div>
           </div>
         </div>
-        <div className="h-[400px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <div className="h-[400px] w-full flex items-center justify-center">
+          {chartData.every(d => d.income === 0 && d.expense === 0) ? (
+            <div className="text-center py-20">
+              <div className="inline-flex items-center justify-center p-4 bg-bg-surface rounded-full mb-4">
+                <TrendingUp className="h-8 w-8 text-text-muted opacity-20" />
+              </div>
+              <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">No activity in the last 7 days</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
@@ -531,7 +567,8 @@ export default function OwnerDashboard({
               <Area type="monotone" dataKey="expense" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" />
             </AreaChart>
           </ResponsiveContainer>
-        </div>
+        )}
+      </div>
       </div>
     </div>
   );
@@ -636,12 +673,20 @@ export default function OwnerDashboard({
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button 
-                    onClick={() => handleEditCustomer(customer)}
-                    className="text-primary hover:text-primary-dark transition-colors"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center justify-end space-x-2">
+                    <button 
+                      onClick={() => handleEditCustomer(customer)}
+                      className="text-primary hover:text-primary-dark transition-colors"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                    <button 
+                      onClick={() => deleteRecord('customers', customer.id)}
+                      className="text-danger hover:text-danger/80 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -690,6 +735,7 @@ export default function OwnerDashboard({
                 <th className="px-6 py-4">Month</th>
                 <th className="px-6 py-4">Paid On</th>
                 <th className="px-6 py-4 text-right">Amount</th>
+                <th className="px-6 py-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
@@ -702,6 +748,14 @@ export default function OwnerDashboard({
                   <td className="px-6 py-4 text-xs text-text-main font-semibold uppercase">{salary.month}</td>
                   <td className="px-6 py-4 text-xs text-text-muted font-medium">{formatDate(salary.date)}</td>
                   <td className="px-6 py-4 text-right text-sm font-bold text-primary">{formatCurrency(salary.amount)}</td>
+                  <td className="px-6 py-4 text-right">
+                    <button 
+                      onClick={() => deleteRecord('salaries', salary.id)}
+                      className="text-danger hover:text-danger/80 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1140,7 +1194,13 @@ export default function OwnerDashboard({
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredMaintenance.map(m => (
-                  <div key={m.id} className="p-5 bg-bg-surface rounded-xl border border-border-subtle hover:border-primary/30 transition-all group">
+                  <div key={m.id} className="p-5 bg-bg-surface rounded-xl border border-border-subtle hover:border-primary/30 transition-all group relative">
+                    <button 
+                      onClick={() => deleteRecord('maintenance', m.id)}
+                      className="absolute top-2 right-2 p-1 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                     <div className="flex justify-between items-start mb-4">
                       <div className="bg-white p-2 rounded-lg border border-border-subtle">
                         <Wrench className="h-4 w-4 text-primary" />
@@ -1167,8 +1227,10 @@ export default function OwnerDashboard({
           {activeTab === 'staff' && renderAssistants()}
           {activeTab === 'settings' && (
             <SettingsContent 
+              user={state.currentUser!}
               settings={state.notificationSettings} 
               onSettingsChange={setNotificationSettings} 
+              onProfileUpdate={syncProfile}
             />
           )}
         </motion.div>

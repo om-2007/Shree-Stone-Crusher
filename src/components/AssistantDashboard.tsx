@@ -2,25 +2,30 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Plus, ReceiptText, Wrench, Search, IndianRupee,
-  MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock
+  MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2
 } from 'lucide-react';
 import { AppState, CustomerEntry, MaintenanceEntry, CustomerType } from '../types';
 import { formatDate, cn } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
+import SettingsContent from './SettingsContent';
 
 interface AssistantDashboardProps {
   state: AppState;
   activeTab: string;
   setCustomers: React.Dispatch<React.SetStateAction<CustomerEntry[]>>;
   setMaintenance: React.Dispatch<React.SetStateAction<MaintenanceEntry[]>>;
+  deleteRecord: (collection: string, id: string) => Promise<void>;
+  syncProfile: (userData: { id: string, name: string, phone: string, role: string }) => Promise<void>;
 }
 
 export default function AssistantDashboard({ 
   state, 
   activeTab, 
   setCustomers, 
-  setMaintenance 
+  setMaintenance,
+  deleteRecord,
+  syncProfile
 }: AssistantDashboardProps) {
   const [showEntryForm, setShowEntryForm] = useState<'NONE' | 'CUSTOMER' | 'MAINTENANCE'>('NONE');
   const [searchTerm, setSearchTerm] = useState('');
@@ -243,6 +248,7 @@ export default function AssistantDashboard({
                   <th className="px-6 py-4">Brass</th>
                   <th className="px-6 py-4">Logged By</th>
                   <th className="px-6 py-4 text-center">Verification</th>
+                  {state.isDayStarted && <th className="px-6 py-4 text-right">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-subtle">
@@ -268,6 +274,16 @@ export default function AssistantDashboard({
                     <td className="px-6 py-4 text-center">
                       <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
                     </td>
+                    {state.isDayStarted && (
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => deleteRecord('customers', c.id)}
+                          className="text-danger hover:text-danger/80 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -377,11 +393,30 @@ export default function AssistantDashboard({
                            <p className="text-xs font-bold text-text-main uppercase">{m.type}</p>
                            <p className="text-[10px] text-text-muted font-bold uppercase">{formatDate(m.date)}</p>
                          </div>
-                         <CheckCircle2 className="h-4 w-4 text-success" />
+                         <div className="flex items-center space-x-3">
+                           {state.isDayStarted && (
+                             <button 
+                               onClick={() => deleteRecord('maintenance', m.id)}
+                               className="text-danger hover:text-danger/80 transition-colors"
+                             >
+                               <Trash2 className="h-4 w-4" />
+                             </button>
+                           )}
+                           <CheckCircle2 className="h-4 w-4 text-success" />
+                         </div>
                        </div>
                      ))}
                   </div>
                 </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <SettingsContent 
+                  user={state.currentUser!}
+                  settings={state.notificationSettings} 
+                  onSettingsChange={() => {}} // Assistants can't change system notification settings
+                  onProfileUpdate={syncProfile}
+                />
               )}
             </motion.div>
         </AnimatePresence>
