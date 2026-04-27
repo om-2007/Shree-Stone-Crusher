@@ -562,7 +562,7 @@ export default function OwnerDashboard({
             </div>
           </div>
         </div>
-        <div className="h-[400px] w-full flex items-center justify-center">
+        <div className="min-h-[350px] w-full flex items-center justify-center">
           {chartData.every(d => d.income === 0 && d.expense === 0) ? (
             <div className="text-center py-20">
               <div className="inline-flex items-center justify-center p-4 bg-bg-surface rounded-full mb-4">
@@ -571,7 +571,7 @@ export default function OwnerDashboard({
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">No activity in the last 7 days</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
