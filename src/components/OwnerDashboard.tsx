@@ -219,8 +219,8 @@ export default function OwnerDashboard({
   };
 
   const uniqueKhataCustomers = useMemo(() => 
-    Array.from(new Set([...state.khataClients, ...state.customerRates.map(r => r.customerName)])),
-    [state.khataClients, state.customerRates]
+    Array.from(new Set([...state.khataClients])),
+    [state.khataClients]
   );
 
   const availableKhataMaterials = useMemo(() => 
@@ -992,15 +992,14 @@ export default function OwnerDashboard({
             </div>
             <div className="divide-y divide-border-subtle max-h-[500px] overflow-y-auto">
               {clients.map(client => (
-                <button
-                  key={client}
-                  onClick={() => setSelectedKhataClient(client)}
-                  className={cn(
-                    "w-full flex items-center justify-between px-6 py-4 transition-all hover:bg-bg-surface",
-                    selectedKhataClient === client ? "border-l-4 border-primary bg-primary/5" : ""
-                  )}
-                >
-                  <div className="flex items-center">
+                <div key={client} className="flex items-center justify-between px-6 py-4 transition-all hover:bg-bg-surface">
+                  <button
+                    onClick={() => setSelectedKhataClient(client)}
+                    className={cn(
+                      "flex items-center flex-1",
+                      selectedKhataClient === client ? "border-l-4 border-primary bg-primary/5 -ml-px pl-4" : ""
+                    )}
+                  >
                     <div className={cn(
                       "h-8 w-8 rounded-lg flex items-center justify-center mr-3 font-bold text-xs shadow-sm",
                       selectedKhataClient === client ? "bg-primary text-white" : "bg-bg-surface text-text-muted"
@@ -1011,12 +1010,19 @@ export default function OwnerDashboard({
                       "text-sm font-bold tracking-tight uppercase",
                       selectedKhataClient === client ? "text-primary" : "text-text-main"
                     )}>{client}</span>
-                  </div>
-                  <ChevronRight className={cn(
-                    "h-4 w-4",
-                    selectedKhataClient === client ? "text-primary" : "text-text-muted opacity-30"
-                  )} />
-                </button>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete client "${client}"?`)) {
+                        deleteRecord('khata-clients', client);
+                      }
+                    }}
+                    className="p-2 text-text-muted hover:text-danger transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               ))}
               {clients.length === 0 && (
                 <div className="p-12 text-center text-text-muted italic text-xs">

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shree-stone-v2';
+const CACHE_NAME = 'shree-stone-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -30,6 +30,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   
+  // Skip caching for API calls
+  if (event.request.url.includes('/api/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+  
+  // Cache static assets only
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const fetched = fetch(event.request).then((response) => {
@@ -49,8 +56,8 @@ self.addEventListener('push', (event) => {
   
   const options = {
     body: data.body,
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/Shree Stone Crusher 192x192.png',
+    badge: '/Shree Stone Crusher 192x192.png',
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' }
   };

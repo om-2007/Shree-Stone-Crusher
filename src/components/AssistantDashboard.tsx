@@ -8,7 +8,6 @@ import { AppState, CustomerEntry, MaintenanceEntry, CustomerType } from '../type
 import { formatDate, cn } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
-import SettingsContent from './SettingsContent';
 
 interface AssistantDashboardProps {
   state: AppState;
@@ -448,14 +447,7 @@ export default function AssistantDashboard({
                 </div>
               )}
 
-              {activeTab === 'settings' && (
-                <SettingsContent 
-                  user={state.currentUser!}
-                  settings={state.notificationSettings} 
-                  onSettingsChange={() => {}} // Assistants can't change system notification settings
-                  onProfileUpdate={syncProfile}
-                />
-              )}
+              
             </motion.div>
         </AnimatePresence>
       </div>
