@@ -1,4 +1,4 @@
-import { pool, decrypt, safeInitDb } from './_lib/db';
+import { pool, decrypt, safeInitDb } from './_lib/db.js';
 
 // Check if current IST time is within business hours (6 AM - 9 PM)
 function isBusinessHoursIST() {

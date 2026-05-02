@@ -1,4 +1,4 @@
-import { pool, initDb } from './_lib/db';
+import { pool, initDb } from './_lib/db.js';
 
 export default async function handler(req, res) {
   await initDb();

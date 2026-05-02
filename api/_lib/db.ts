@@ -6,12 +6,7 @@ dotenv.config();
 
 const { Pool } = pg;
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
+let poolInstance: pg.Pool | null = null;
 
 export function getDatabaseConfigError() {
   if (!process.env.DATABASE_URL) {
@@ -19,6 +14,39 @@ export function getDatabaseConfigError() {
   }
   return null;
 }
+
+function createPool() {
+  return new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  });
+}
+
+export function getPool() {
+  const configError = getDatabaseConfigError();
+  if (configError) {
+    throw new Error(configError);
+  }
+
+  if (!poolInstance) {
+    try {
+      poolInstance = createPool();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to initialize database connection';
+      throw new Error(`Database configuration error: ${message}`);
+    }
+  }
+
+  return poolInstance;
+}
+
+export const pool = new Proxy({} as pg.Pool, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getPool() as object, prop, receiver);
+  }
+}) as pg.Pool;
 
 const CRYPTO_SECRET = process.env.CRYPTO_SECRET || 'fallback_secret_for_dev_only';
 
@@ -120,10 +148,6 @@ export async function initDb() {
 }
 
 export async function safeInitDb() {
-  const configError = getDatabaseConfigError();
-  if (configError) {
-    throw new Error(configError);
-  }
-
+  getPool();
   await initDb();
 }
