@@ -64,6 +64,41 @@ export default function App() {
     }
   };
 
+  const applyServerData = (data: any) => {
+    setCustomers(data.customers || []);
+    setMaintenance(data.maintenance || []);
+    setSalaries(data.salaries || []);
+    setKhataPayments(data.khataPayments || []);
+    setAssistants(data.assistants || []);
+    setCustomerRates(data.customerRates || []);
+    setKhataClients(data.khataClients || []);
+    setOwnerProfile(data.ownerProfile || null);
+    setNotificationSettings(data.notificationSettings || {
+      enableKhataReminders: true,
+      enableMaintenanceAlerts: true,
+    });
+    setIsDayStarted(data.isDayStarted || false);
+
+    const saved = localStorage.getItem('currentUser');
+    if (saved) {
+      try {
+        const user = JSON.parse(saved);
+        if (user.role === 'OWNER' && data.ownerProfile) {
+          setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
+        }
+      } catch (error) {
+        console.error('Failed to refresh saved user', error);
+      }
+    }
+  };
+
+  const refreshData = async (label: string) => {
+    const res = await fetch('/api/data', { cache: 'no-store' });
+    const data = await parseJsonResponse(res, label);
+    applyServerData(data);
+    return data;
+  };
+
   // Persistence effect for session
   useEffect(() => {
     if (currentUser) {
@@ -75,30 +110,8 @@ export default function App() {
 
   // Fetch data on mount
   useEffect(() => {
-    fetch('/api/data')
-      .then(res => parseJsonResponse(res, 'Initial data fetch'))
-      .then(data => {
-        setCustomers(data.customers);
-        setMaintenance(data.maintenance);
-        setSalaries(data.salaries);
-        setKhataPayments(data.khataPayments);
-        setAssistants(data.assistants);
-        setCustomerRates(data.customerRates);
-        setKhataClients(data.khataClients);
-        setOwnerProfile(data.ownerProfile);
-        setIsDayStarted(data.isDayStarted || false);
-
-        // If we are logged in as owner, update currently saved info with latest from DB
-        const saved = localStorage.getItem('currentUser');
-        if (saved) {
-          const user = JSON.parse(saved);
-          if (user.role === 'OWNER' && data.ownerProfile) {
-            setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
-          }
-        }
-
-        setLoading(false);
-      })
+    refreshData('Initial data fetch')
+      .then(() => setLoading(false))
       .catch(err => {
         console.error('Failed to fetch data', err);
         setLoading(false);
@@ -131,6 +144,7 @@ export default function App() {
       });
       if (res.ok) {
         setIsDayStarted(status);
+        await refreshData('Day status refresh');
       }
     } catch (e) {
       console.error('Failed to sync day status', e);
@@ -153,6 +167,7 @@ export default function App() {
         if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c !== id));
+        await refreshData(`Refresh after deleting ${collection}`);
       }
     } catch (e) {
       console.error('Failed to delete record', e);
@@ -173,6 +188,7 @@ export default function App() {
         } else {
           setAssistants(prev => prev.map(a => a.id === userData.id ? { ...a, name: userData.name, phone: userData.phone } : a));
         }
+        await refreshData('Profile refresh');
       }
     } catch (e) {
       console.error('Failed to sync profile', e);
@@ -188,6 +204,7 @@ export default function App() {
       });
       if (!res.ok) return;
       setNotificationSettings(settings);
+      await refreshData('Notification settings refresh');
     } catch (e) {
       console.error('Failed to sync settings', e);
     }
@@ -219,6 +236,7 @@ const syncCustomer = async (data: any) => {
           return [stored, ...prev];
         });
       }
+      await refreshData('Customer refresh');
     } catch (e) {
       console.error('Failed to sync customer', e);
     }
@@ -238,6 +256,7 @@ const syncCustomer = async (data: any) => {
         if (prev.some(m => m.id === stored.id)) return prev;
         return [stored, ...prev];
       });
+      await refreshData('Maintenance refresh');
     } catch (e) {
       console.error('Failed to sync maintenance', e);
     }
@@ -257,6 +276,7 @@ const syncCustomer = async (data: any) => {
         if (prev.some(s => s.id === stored.id)) return prev;
         return [stored, ...prev];
       });
+      await refreshData('Salary refresh');
     } catch (e) {
       console.error('Failed to sync salary', e);
     }
@@ -285,6 +305,7 @@ const syncKhataPayment = async (data: any) => {
         if (prev.some((p: any) => p.id === stored.id)) return prev;
         return [stored, ...prev];
       });
+      await refreshData('Khata payment refresh');
     } catch (e) {
       console.error('Failed to sync khata payment', e);
     }
@@ -309,6 +330,7 @@ const syncKhataPayment = async (data: any) => {
         }
         return [stored, ...prev];
       });
+      await refreshData('Customer rate refresh');
     } catch (e) {
       console.error('Failed to sync customer rate', e);
     }
@@ -328,6 +350,7 @@ const syncKhataPayment = async (data: any) => {
         if (prev.some(a => a.id === stored.id)) return prev;
         return [...prev, stored];
       });
+      await refreshData('Assistant refresh');
     } catch (e) {
       console.error('Failed to sync assistant', e);
     }
@@ -348,6 +371,7 @@ const syncKhataPayment = async (data: any) => {
         if (prev.includes(stored.name)) return prev;
         return [...prev, stored.name];
       });
+      await refreshData('Khata client refresh');
     } catch (e) {
       console.error('Failed to sync khata client', e);
     }
