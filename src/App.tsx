@@ -43,6 +43,25 @@ export default function App() {
   const [isDayStarted, setIsDayStarted] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const parseJsonResponse = async (res: Response, label: string) => {
+    const contentType = res.headers.get('content-type') || '';
+    const raw = await res.text();
+
+    if (!res.ok) {
+      throw new Error(`${label} failed with ${res.status}: ${raw.slice(0, 200)}`);
+    }
+
+    if (!contentType.includes('application/json')) {
+      throw new Error(`${label} returned non-JSON response: ${raw.slice(0, 200)}`);
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`${label} returned invalid JSON: ${raw.slice(0, 200)}`);
+    }
+  };
+
   // Persistence effect for session
   useEffect(() => {
     if (currentUser) {
@@ -55,7 +74,7 @@ export default function App() {
   // Fetch data on mount
   useEffect(() => {
     fetch('/api/data')
-      .then(res => res.json())
+      .then(res => parseJsonResponse(res, 'Initial data fetch'))
       .then(data => {
         setCustomers(data.customers);
         setMaintenance(data.maintenance);
@@ -89,7 +108,7 @@ export default function App() {
     const pollDayStatus = async () => {
       try {
         const res = await fetch('/api/system-state');
-        const data = await res.json();
+        const data = await parseJsonResponse(res, 'Day status poll');
         if (data.isDayStarted !== undefined && data.isDayStarted !== isDayStarted) {
           setIsDayStarted(data.isDayStarted);
         }

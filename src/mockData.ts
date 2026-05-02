@@ -30,6 +30,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     paidAmount: 15000,
     status: 'PAID',
     addedBy: 'Kiran Chavan',
+    addedById: 'o1',
   },
   {
     id: 'c2',
@@ -44,6 +45,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     paidAmount: 5000,
     status: 'PENDING',
     addedBy: 'assistant',
+    addedById: 'a1',
   },
   {
     id: 'c3',
@@ -58,6 +60,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     paidAmount: 9000,
     status: 'PAID',
     addedBy: 'Kiran Chavan',
+    addedById: 'o1',
   }
 ];
 

@@ -28,6 +28,7 @@ export interface CustomerEntry {
   paidAmount: number; // Amount paid by customer
   status: 'PAID' | 'PENDING';
   addedBy: string;
+  addedById: string; // Tracks which user created the billing record
 }
 
 export interface MaintenanceEntry {
