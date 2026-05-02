@@ -1,4 +1,4 @@
-import { pool, decrypt, initDb } from './_lib/db';
+import { pool, decrypt, safeInitDb } from './_lib/db';
 
 // Check if current IST time is within business hours (6 AM - 9 PM)
 function isBusinessHoursIST() {
@@ -29,12 +29,12 @@ async function autoUpdateDayStatus() {
 }
 
 export default async function handler(req: any, res: any) {
-  await initDb();
-
-  // Auto-correct day status on each data fetch
-  await autoUpdateDayStatus();
-
   try {
+    await safeInitDb();
+
+    // Auto-correct day status on each data fetch
+    await autoUpdateDayStatus();
+
     const customers = await pool.query("SELECT * FROM customers");
     const maintenance = await pool.query("SELECT * FROM maintenance");
     const salaries = await pool.query("SELECT * FROM salaries");
@@ -120,6 +120,6 @@ export default async function handler(req: any, res: any) {
     res.json(decryptedData);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Database error' });
   }
 }

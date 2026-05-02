@@ -13,6 +13,13 @@ export const pool = new Pool({
   }
 });
 
+export function getDatabaseConfigError() {
+  if (!process.env.DATABASE_URL) {
+    return 'DATABASE_URL is not configured on the server';
+  }
+  return null;
+}
+
 const CRYPTO_SECRET = process.env.CRYPTO_SECRET || 'fallback_secret_for_dev_only';
 
 export const encrypt = (text: any) => {
@@ -110,4 +117,13 @@ export async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS khata_clients (
     id TEXT PRIMARY KEY, name TEXT
   )`);
+}
+
+export async function safeInitDb() {
+  const configError = getDatabaseConfigError();
+  if (configError) {
+    throw new Error(configError);
+  }
+
+  await initDb();
 }
