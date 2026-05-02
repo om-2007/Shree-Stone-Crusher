@@ -66,7 +66,7 @@ export default function App() {
         setKhataClients(data.khataClients);
         setOwnerProfile(data.ownerProfile);
         setIsDayStarted(data.isDayStarted || false);
-        
+
         // If we are logged in as owner, update currently saved info with latest from DB
         const saved = localStorage.getItem('currentUser');
         if (saved) {
@@ -75,7 +75,7 @@ export default function App() {
             setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
           }
         }
-        
+
         setLoading(false);
       })
       .catch(err => {
@@ -83,6 +83,23 @@ export default function App() {
         setLoading(false);
       });
   }, []);
+
+  // Poll day status every 60 seconds to sync with automatic start/end
+  useEffect(() => {
+    const pollDayStatus = async () => {
+      try {
+        const res = await fetch('/api/system-state');
+        const data = await res.json();
+        if (data.isDayStarted !== undefined && data.isDayStarted !== isDayStarted) {
+          setIsDayStarted(data.isDayStarted);
+        }
+      } catch (e) {
+        console.error('Failed to poll day status', e);
+      }
+    };
+    const interval = setInterval(pollDayStatus, 60000);
+    return () => clearInterval(interval);
+  }, [isDayStarted]);
 
   const syncDayStatus = async (status: boolean) => {
     try {

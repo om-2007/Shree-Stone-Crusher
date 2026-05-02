@@ -38,6 +38,39 @@ const decrypt = (ciphertext: string) => {
   }
 };
 
+// Check if current IST time is within business hours (6 AM - 9 PM)
+function isBusinessHoursIST(): boolean {
+  const now = new Date();
+  // Get IST time by adding 5 hours 30 minutes to UTC
+  const istTime = new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
+  const istHour = istTime.getUTCHours();
+  const istMinute = istTime.getUTCMinutes();
+  const currentTime = istHour + istMinute / 60;
+  return currentTime >= 6.0 && currentTime < 21.0;
+}
+
+// Automatic day start/end based on IST time
+async function autoUpdateDayStatus() {
+  try {
+    const shouldBeStarted = isBusinessHoursIST();
+
+    // Get current status
+    const systemState = await pool.query("SELECT value FROM system_state WHERE key = 'isDayStarted'");
+    const currentStatus = systemState.rows.length > 0 && systemState.rows[0].value === 'true';
+
+    // Update only if status needs to change
+    if (shouldBeStarted !== currentStatus) {
+      await pool.query(
+        "UPDATE system_state SET value = $1 WHERE key = 'isDayStarted'",
+        [shouldBeStarted.toString()]
+      );
+      console.log(`Auto-updated isDayStarted to ${shouldBeStarted} (IST: ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })})`);
+    }
+  } catch (err) {
+    console.error('Failed to auto-update day status:', err);
+  }
+}
+
 async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -229,13 +262,36 @@ async function startServer() {
   } catch (err) {
     console.error('Database initialization failed:', err);
   }
+
+  // Run automatic day status check on server start
+  await autoUpdateDayStatus();
+
+  // Check every 60 seconds for automatic day start/end
+  setInterval(async () => {
+    await autoUpdateDayStatus();
+  }, 60000);
+
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
+  app.get('/api/system-state', async (req, res) => {
+    try {
+      const system_state = await pool.query("SELECT * FROM system_state");
+      const isDayStarted = system_state.rows.find(r => r.key === 'isDayStarted')?.value === 'true';
+      res.json({ isDayStarted });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Database error' });
+    }
+  });
+
   app.get('/api/data', async (req, res) => {
     try {
+      // Auto-correct day status on each data fetch
+      await autoUpdateDayStatus();
+
       const customers = await pool.query("SELECT * FROM customers");
       const maintenance = await pool.query("SELECT * FROM maintenance");
       const salaries = await pool.query("SELECT * FROM salaries");
