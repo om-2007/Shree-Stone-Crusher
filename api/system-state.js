@@ -1,12 +1,12 @@
 import { pool, initDb } from './_lib/db';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   await initDb();
 
   if (req.method === 'GET') {
     try {
       const system_state = await pool.query("SELECT * FROM system_state");
-      const isDayStarted = system_state.rows.find((r: any) => r.key === 'isDayStarted')?.value === 'true';
+      const isDayStarted = system_state.rows.find((r) => r.key === 'isDayStarted')?.value === 'true';
       res.json({ isDayStarted });
     } catch (err) {
       console.error(err);

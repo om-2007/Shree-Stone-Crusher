@@ -1,7 +1,7 @@
 import { pool, initDb } from '../_lib/db';
 
 // Check if current IST time is within business hours (6 AM - 9 PM)
-function isBusinessHoursIST(): boolean {
+function isBusinessHoursIST() {
   const now = new Date();
   const istTime = new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
   const istHour = istTime.getUTCHours();
@@ -28,7 +28,7 @@ async function autoUpdateDayStatus() {
   }
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   await initDb();
   await autoUpdateDayStatus();
   res.json({ success: true });

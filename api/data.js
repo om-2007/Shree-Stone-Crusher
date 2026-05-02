@@ -1,6 +1,6 @@
 import { pool, decrypt, initDb } from './_lib/db';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   await initDb();
 
   // Auto-correct day status on each data fetch
@@ -21,10 +21,10 @@ export default async function handler(req: any, res: any) {
     const khata_clients = await pool.query("SELECT * FROM khata_clients");
     const owner_profile = await pool.query("SELECT * FROM owner_profile");
     const system_state = await pool.query("SELECT * FROM system_state");
-    const isDayStarted = system_state.rows.find((r: any) => r.key === 'isDayStarted')?.value === 'true';
+    const isDayStarted = system_state.rows.find((r) => r.key === 'isDayStarted')?.value === 'true';
 
     const decryptedData = {
-      customers: customers.rows.map((c: any) => ({
+      customers: customers.rows.map((c) => ({
         id: c.id,
         vehicleNumber: c.vehiclenumber || '',
         customerName: c.customername || '',
@@ -39,7 +39,7 @@ export default async function handler(req: any, res: any) {
         addedBy: c.addedby || '',
         addedById: c.addedbyid || ''
       })),
-      maintenance: maintenance.rows.map((m: any) => ({
+      maintenance: maintenance.rows.map((m) => ({
         id: m.id,
         type: m.type || '',
         description: m.description || '',
@@ -48,7 +48,7 @@ export default async function handler(req: any, res: any) {
         addedBy: m.addedby || '',
         addedById: m.addedbyid || ''
       })),
-      salaries: salaries.rows.map((s: any) => ({
+      salaries: salaries.rows.map((s) => ({
         id: s.id,
         workerName: s.workername || '',
         role: s.role || '',
@@ -58,7 +58,7 @@ export default async function handler(req: any, res: any) {
         addedBy: s.addedby || '',
         addedById: s.addedbyid || ''
       })),
-      khataPayments: khata_payments.map((p: any) => ({
+      khataPayments: khata_payments.map((p) => ({
         id: p.id,
         customerName: p.customername || '',
         amount: p.amount ? parseFloat(decrypt(p.amount)) : 0,
@@ -69,13 +69,13 @@ export default async function handler(req: any, res: any) {
         addedById: p.addedbyid || ''
       })),
       assistants: assistants.rows,
-      customerRates: customer_rates.rows.map((r: any) => ({
+      customerRates: customer_rates.rows.map((r) => ({
         id: r.id,
         customerName: r.customername || '',
         material: r.material || '',
         rate: r.rate ? parseFloat(decrypt(r.rate)) : 0
       })),
-      khataClients: khata_clients.rows.map((c: any) => c.name).filter(Boolean),
+      khataClients: khata_clients.rows.map((c) => c.name).filter(Boolean),
       ownerProfile: owner_profile.rows[0],
       notificationSettings: {
         enableKhataReminders: owner_profile.rows[0]?.enablekhatareminders ?? true,
@@ -91,7 +91,7 @@ export default async function handler(req: any, res: any) {
 }
 
 // Check if current IST time is within business hours (6 AM - 9 PM)
-function isBusinessHoursIST(): boolean {
+function isBusinessHoursIST() {
   const now = new Date();
   const istTime = new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
   const istHour = istTime.getUTCHours();

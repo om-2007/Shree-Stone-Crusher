@@ -15,12 +15,12 @@ const pool = new Pool({
 
 const CRYPTO_SECRET = process.env.CRYPTO_SECRET || 'fallback_secret_for_dev_only';
 
-export const encrypt = (text: any) => {
+export const encrypt = (text) => {
   if (text === undefined || text === null) return '';
   return CryptoJS.AES.encrypt(text.toString(), CRYPTO_SECRET).toString();
 };
 
-export const decrypt = (ciphertext: string) => {
+export const decrypt = (ciphertext) => {
   if (!ciphertext) return '0';
   try {
     const bytes = CryptoJS.AES.decrypt(ciphertext, CRYPTO_SECRET);

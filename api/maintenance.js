@@ -1,6 +1,6 @@
 import { pool, encrypt, initDb } from './_lib/db';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   await initDb();
 
   if (req.method === 'POST') {

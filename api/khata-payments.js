@@ -1,6 +1,6 @@
 import { pool, encrypt, initDb } from './_lib/db';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   await initDb();
 
   if (req.method === 'POST') {
@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
       );
 
       res.json({ id, customerName, amount: parseFloat(amount), date });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Insert error:', err.message);
       res.status(500).json({ error: err.message });
     }
