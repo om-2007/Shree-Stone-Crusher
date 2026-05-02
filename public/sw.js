@@ -1,7 +1,6 @@
-const CACHE_NAME = 'shree-stone-v3';
+const CACHE_NAME = 'shree-stone-v4';
 const STATIC_ASSETS = [
   '/',
-  '/index.html',
   '/manifest.json',
   '/Shree Stone Crusher 192x192.png',
   '/Shree Stone Crusher 512x512.png'
@@ -29,13 +28,25 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  
-  // Skip caching for API calls
-  if (event.request.url.includes('/api/')) {
+
+  const url = new URL(event.request.url);
+
+  // Skip caching for API calls and Next.js build assets
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/')) {
     event.respondWith(fetch(event.request));
     return;
   }
-  
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        return cache.match('/') || Response.error();
+      })
+    );
+    return;
+  }
+
   // Cache static assets only
   event.respondWith(
     caches.match(event.request).then((cached) => {

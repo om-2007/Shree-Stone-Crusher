@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useMemo, useEffect } from 'react';
 import { User, AppState, UserRole, CustomerRate } from './types';
 // Removed mock imports to lean purely on database
