@@ -6,7 +6,7 @@ dotenv.config();
 
 const { Pool } = pg;
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
@@ -15,12 +15,12 @@ const pool = new Pool({
 
 const CRYPTO_SECRET = process.env.CRYPTO_SECRET || 'fallback_secret_for_dev_only';
 
-export const encrypt = (text) => {
+export const encrypt = (text: any) => {
   if (text === undefined || text === null) return '';
   return CryptoJS.AES.encrypt(text.toString(), CRYPTO_SECRET).toString();
 };
 
-export const decrypt = (ciphertext) => {
+export const decrypt = (ciphertext: string) => {
   if (!ciphertext) return '0';
   try {
     const bytes = CryptoJS.AES.decrypt(ciphertext, CRYPTO_SECRET);
@@ -111,5 +111,3 @@ export async function initDb() {
     id TEXT PRIMARY KEY, name TEXT
   )`);
 }
-
-export { pool };

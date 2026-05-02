@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: true
+    rejectUnauthorized: false
   }
 });
 
@@ -250,6 +250,14 @@ async function initDb() {
     await pool.query(`ALTER TABLE customer_rates ADD COLUMN material TEXT`);
   } catch (e) {}
   
+  await pool.query(`CREATE TABLE IF NOT EXISTS khata_payments (
+    id TEXT PRIMARY KEY, customerName TEXT, amount TEXT, paymentMethod TEXT, description TEXT, date TEXT, addedBy TEXT, addedById TEXT
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS khata_logs (
+    id TEXT PRIMARY KEY, customerName TEXT, amount TEXT, date TEXT
+  )`);
+
   await pool.query(`CREATE TABLE IF NOT EXISTS khata_clients (
     id TEXT PRIMARY KEY,
     name TEXT
@@ -295,13 +303,17 @@ async function startServer() {
       const customers = await pool.query("SELECT * FROM customers");
       const maintenance = await pool.query("SELECT * FROM maintenance");
       const salaries = await pool.query("SELECT * FROM salaries");
-      const khata_payments_result = await pool.query("SELECT * FROM khata_logs").catch(async (err) => {
-        console.log('khata_logs query error:', err.message);
-        await pool.query(`CREATE TABLE IF NOT EXISTS khata_logs (id TEXT PRIMARY KEY, customerName TEXT, amount TEXT, date TEXT)`);
-        return { rows: [] };
-      });
-      console.log('Fetched khata_payments:', khata_payments_result.rows?.length || 0);
-      const khata_payments = khata_payments_result.rows || [];
+      
+      let khata_payments_rows: any[] = [];
+      try {
+        const result = await pool.query("SELECT * FROM khata_payments");
+        khata_payments_rows = result.rows;
+      } catch (err) {
+        console.log('Falling back to khata_logs');
+        const result = await pool.query("SELECT * FROM khata_logs").catch(() => ({ rows: [] }));
+        khata_payments_rows = result.rows;
+      }
+
       const assistants = await pool.query("SELECT * FROM assistants");
       const customer_rates = await pool.query("SELECT * FROM customer_rates");
       const khata_clients = await pool.query("SELECT * FROM khata_clients");
@@ -351,7 +363,7 @@ async function startServer() {
           addedBy: s.addedby || '',
           addedById: s.addedbyid || ''
         })),
-        khataPayments: khata_payments.map((p: any) => ({
+        khataPayments: khata_payments_rows.map((p: any) => ({
           id: p.id,
           customerName: p.customername || '',
           amount: p.amount ? parseFloat(decrypt(p.amount)) : 0,
@@ -442,8 +454,8 @@ app.post('/api/settings', async (req, res) => {
       'customers': 'customers',
       'maintenance': 'maintenance',
       'salaries': 'salaries',
-      'khata-payments': 'khata_logs',
-      'khataPayments': 'khata_logs',
+      'khata-payments': 'khata_payments',
+      'khataPayments': 'khata_payments',
       'assistants': 'assistants',
       'customer-rates': 'customer_rates',
       'customerRates': 'customer_rates',
@@ -596,30 +608,22 @@ app.post('/api/settings', async (req, res) => {
   });
 
   app.post('/api/khata-payments', async (req, res) => {
-    const { customerName, amount } = req.body;
+    const { id, customerName, amount, paymentMethod, description, date, addedBy, addedById } = req.body;
     if (!customerName || amount === undefined) {
       return res.status(400).json({ error: 'Customer name and amount required' });
     }
-    const id = Date.now().toString();
-    const date = new Date().toISOString();
+    const newId = id || Date.now().toString();
+    const finalDate = date || new Date().toISOString();
     try {
-      // Create new table with new name
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS khata_logs (
-          id TEXT PRIMARY KEY,
-          customerName TEXT NOT NULL,
-          amount TEXT NOT NULL,
-          date TEXT NOT NULL
-        )
-      `);
-      
-      // Insert data
       await pool.query(
-        "INSERT INTO khata_logs (id, customerName, amount, date) VALUES ($1, $2, $3, $4)",
-        [id, customerName, encrypt(String(amount)), date]
+        `INSERT INTO khata_payments (id, customerName, amount, paymentMethod, description, date, addedBy, addedById)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (id) DO UPDATE SET
+         customerName = $2, amount = $3, paymentMethod = $4, description = $5, date = $6, addedBy = $7, addedById = $8`,
+        [newId, customerName, encrypt(amount.toString()), paymentMethod || '', description || '', finalDate, addedBy || '', addedById || '']
       );
       
-      res.json({ id, customerName, amount: parseFloat(amount), date });
+      res.json({ id: newId, customerName, amount: parseFloat(amount), paymentMethod, description, date: finalDate, addedBy });
     } catch (err: any) {
       console.error('Insert error:', err.message);
       res.status(500).json({ error: err.message });
